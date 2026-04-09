@@ -272,6 +272,7 @@ class ShareActivity : AppCompatActivity() {
             val firstMimeType = resolver.getType(uris[0])
             contentText.text = getString(R.string.share_content_multi_file_text)
             contentFileInfo.text = fileInfoLines.joinToString("\n")
+            // Use the specific MIME icon for a single file, or the generic file icon for multiple files
             contentFileIcon.setImageResource(mimeTypeToIconResource(if (uris.size == 1) firstMimeType else null))
             show(file = true)
         } catch (e: Exception) {
