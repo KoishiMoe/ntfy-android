@@ -219,7 +219,9 @@ class ShareActivity : AppCompatActivity() {
         fileUris = listOf(uri)
         try {
             contentImage.setImageBitmap(uri.readBitmapFromUri(applicationContext))
-            contentText.text = getString(R.string.share_content_image_text)
+            if (repository.getShareDefaultMessageEnabled()) {
+                contentText.text = getString(R.string.share_content_image_text)
+            }
             show(image = true)
         } catch (e: Exception) {
             fileUris = emptyList()
@@ -241,7 +243,9 @@ class ShareActivity : AppCompatActivity() {
             val resolver = applicationContext.contentResolver
             val info = fileStat(this, uri)
             val mimeType = resolver.getType(uri)
-            contentText.text = getString(R.string.share_content_file_text)
+            if (repository.getShareDefaultMessageEnabled()) {
+                contentText.text = getString(R.string.share_content_file_text)
+            }
             contentFileInfo.text = "${info.filename}\n${formatBytes(info.size)}"
             contentFileIcon.setImageResource(mimeTypeToIconResource(mimeType))
             show(file = true)
@@ -270,7 +274,9 @@ class ShareActivity : AppCompatActivity() {
                 "${info.filename} (${formatBytes(info.size)})"
             }
             val firstMimeType = resolver.getType(uris[0])
-            contentText.text = getString(R.string.share_content_multi_file_text)
+            if (repository.getShareDefaultMessageEnabled()) {
+                contentText.text = getString(R.string.share_content_multi_file_text)
+            }
             contentFileInfo.text = fileInfoLines.joinToString("\n")
             // Use the specific MIME icon for a single file, or the generic file icon for multiple files
             contentFileIcon.setImageResource(mimeTypeToIconResource(if (uris.size == 1) firstMimeType else null))
@@ -389,10 +395,11 @@ class ShareActivity : AppCompatActivity() {
         if (!this::sendItem.isInitialized || !this::useAnotherServerCheckbox.isInitialized || !this::contentText.isInitialized || !this::topicText.isInitialized) {
             return // sendItem is initialized late in onCreateOptionsMenu
         }
+        val messageValid = contentText.text.isNotEmpty() || fileUris.isNotEmpty()
         val enabled = if (useAnotherServerCheckbox.isChecked) {
-            contentText.text.isNotEmpty() && validTopic(topicText.text.toString()) && validUrl(baseUrlText.text.toString())
+            messageValid && validTopic(topicText.text.toString()) && validUrl(baseUrlText.text.toString())
         } else {
-            contentText.text.isNotEmpty() && topicText.text.isNotEmpty()
+            messageValid && topicText.text.isNotEmpty()
         }
         sendItem.isEnabled = enabled
         sendItem.icon?.alpha = if (enabled) 255 else 130

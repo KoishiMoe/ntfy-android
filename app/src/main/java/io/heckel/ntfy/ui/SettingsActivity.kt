@@ -504,6 +504,26 @@ class SettingsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPrefere
                 }
             }
 
+            // Share default message enabled
+            val shareDefaultMessagePrefId = context?.getString(R.string.settings_general_share_default_message_key) ?: return
+            val shareDefaultMessage: SwitchPreferenceCompat? = findPreference(shareDefaultMessagePrefId)
+            shareDefaultMessage?.isChecked = repository.getShareDefaultMessageEnabled()
+            shareDefaultMessage?.preferenceDataStore = object : PreferenceDataStore() {
+                override fun putBoolean(key: String?, value: Boolean) {
+                    repository.setShareDefaultMessageEnabled(value)
+                }
+                override fun getBoolean(key: String?, defValue: Boolean): Boolean {
+                    return repository.getShareDefaultMessageEnabled()
+                }
+            }
+            shareDefaultMessage?.summaryProvider = Preference.SummaryProvider<SwitchPreferenceCompat> { pref ->
+                if (pref.isChecked) {
+                    getString(R.string.settings_general_share_default_message_summary_enabled)
+                } else {
+                    getString(R.string.settings_general_share_default_message_summary_disabled)
+                }
+            }
+
             // Default Base URL
             val appBaseUrl = getString(R.string.app_base_url)
             val defaultBaseUrlPrefId = context?.getString(R.string.settings_general_default_base_url_key) ?: return
