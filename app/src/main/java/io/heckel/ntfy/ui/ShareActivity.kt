@@ -28,8 +28,8 @@ class ShareActivity : AppCompatActivity() {
     private val repository by lazy { (application as Application).repository }
     private val api by lazy { ApiService(this) }
 
-    // File to share
-    private var fileUri: Uri? = null
+    // Files to share
+    private var fileUris: List<Uri> = emptyList()
 
     // Context-dependent things
     private lateinit var appBaseUrl: String
@@ -189,13 +189,16 @@ class ShareActivity : AppCompatActivity() {
         // Incoming intent
         val intent = intent ?: return
         val type = intent.type ?: return
-        if (intent.action != Intent.ACTION_SEND) return
-        if (type == "text/plain") {
-            handleSendText(intent)
-        } else if (type.startsWith("image/")) {
-            handleSendImage(intent)
-        } else {
-            handleSendFile(intent)
+        if (intent.action == Intent.ACTION_SEND) {
+            if (type == "text/plain") {
+                handleSendText(intent)
+            } else if (type.startsWith("image/")) {
+                handleSendImage(intent)
+            } else {
+                handleSendFile(intent)
+            }
+        } else if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            handleSendMultiple(intent)
         }
     }
 
@@ -207,18 +210,19 @@ class ShareActivity : AppCompatActivity() {
     }
 
     private fun handleSendImage(intent: Intent) {
-        fileUri = intent.getParcelableExtra<Parcelable>(Intent.EXTRA_STREAM) as? Uri
-        Log.d(TAG, "Shared content is an image with URI $fileUri")
-        if (fileUri == null) {
+        val uri = intent.getParcelableExtra<Parcelable>(Intent.EXTRA_STREAM) as? Uri
+        Log.d(TAG, "Shared content is an image with URI $uri")
+        if (uri == null) {
             Log.w(TAG, "Null URI is not allowed. Aborting.")
             return
         }
+        fileUris = listOf(uri)
         try {
-            contentImage.setImageBitmap(fileUri!!.readBitmapFromUri(applicationContext))
+            contentImage.setImageBitmap(uri.readBitmapFromUri(applicationContext))
             contentText.text = getString(R.string.share_content_image_text)
             show(image = true)
         } catch (e: Exception) {
-            fileUri = null
+            fileUris = emptyList()
             contentText.text = ""
             errorText.text = getString(R.string.share_content_image_error, e.message)
             show(error = true)
@@ -226,22 +230,52 @@ class ShareActivity : AppCompatActivity() {
     }
 
     private fun handleSendFile(intent: Intent) {
-        fileUri = intent.getParcelableExtra<Parcelable>(Intent.EXTRA_STREAM) as? Uri
-        Log.d(TAG, "Shared content is a file with URI $fileUri")
-        if (fileUri == null) {
+        val uri = intent.getParcelableExtra<Parcelable>(Intent.EXTRA_STREAM) as? Uri
+        Log.d(TAG, "Shared content is a file with URI $uri")
+        if (uri == null) {
             Log.w(TAG, "Null URI is not allowed. Aborting.")
             return
         }
+        fileUris = listOf(uri)
         try {
             val resolver = applicationContext.contentResolver
-            val info = fileStat(this, fileUri)
-            val mimeType = resolver.getType(fileUri!!)
+            val info = fileStat(this, uri)
+            val mimeType = resolver.getType(uri)
             contentText.text = getString(R.string.share_content_file_text)
             contentFileInfo.text = "${info.filename}\n${formatBytes(info.size)}"
             contentFileIcon.setImageResource(mimeTypeToIconResource(mimeType))
             show(file = true)
         } catch (e: Exception) {
-            fileUri = null
+            fileUris = emptyList()
+            contentText.text = ""
+            errorText.text = getString(R.string.share_content_file_error, e.message)
+            show(error = true)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun handleSendMultiple(intent: Intent) {
+        val uris = intent.getParcelableArrayListExtra<Parcelable>(Intent.EXTRA_STREAM)
+            ?.filterIsInstance<Uri>() ?: emptyList()
+        Log.d(TAG, "Shared content is multiple items: ${uris.size} items")
+        if (uris.isEmpty()) {
+            Log.w(TAG, "Empty URI list. Aborting.")
+            return
+        }
+        fileUris = uris
+        try {
+            val resolver = applicationContext.contentResolver
+            val fileInfoLines = uris.map { uri ->
+                val info = fileStat(this, uri)
+                "${info.filename} (${formatBytes(info.size)})"
+            }
+            val firstMimeType = resolver.getType(uris[0])
+            contentText.text = getString(R.string.share_content_multi_file_text)
+            contentFileInfo.text = fileInfoLines.joinToString("\n")
+            contentFileIcon.setImageResource(mimeTypeToIconResource(if (uris.size == 1) firstMimeType else null))
+            show(file = true)
+        } catch (e: Exception) {
+            fileUris = emptyList()
             contentText.text = ""
             errorText.text = getString(R.string.share_content_file_error, e.message)
             show(error = true)
@@ -298,21 +332,27 @@ class ShareActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val user = repository.getUser(baseUrl)
             try {
-                val (filename, body) = if (fileUri != null) {
-                    val stat = fileStat(this@ShareActivity, fileUri)
-                    val body = ContentUriRequestBody(applicationContext.contentResolver, fileUri!!, stat.size)
-                    Pair(stat.filename, body)
+                if (fileUris.isNotEmpty()) {
+                    for (uri in fileUris) {
+                        val stat = fileStat(this@ShareActivity, uri)
+                        val body = ContentUriRequestBody(applicationContext.contentResolver, uri, stat.size)
+                        api.publish(
+                            baseUrl = baseUrl,
+                            topic = topic,
+                            user = user,
+                            message = message,
+                            body = body,
+                            filename = stat.filename,
+                        )
+                    }
                 } else {
-                    Pair("", null)
+                    api.publish(
+                        baseUrl = baseUrl,
+                        topic = topic,
+                        user = user,
+                        message = message,
+                    )
                 }
-                api.publish(
-                    baseUrl = baseUrl,
-                    topic = topic,
-                    user = user,
-                    message = message,
-                    body = body, // May be null
-                    filename = filename, // May be empty
-                )
                 runOnUiThread {
                     repository.addLastShareTopic(topicUrl(baseUrl, topic))
                     Log.addScrubTerm(shortUrl(baseUrl), Log.TermType.Domain)
