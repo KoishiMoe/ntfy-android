@@ -41,8 +41,7 @@ class BroadcastService(private val ctx: Context) {
         intent.putExtra("attachment_expires", notification.attachment?.expires ?: 0L)
         intent.putExtra("attachment_url", notification.attachment?.url ?: "")
 
-        Log.d(TAG, "Sending message intent broadcast: ${intent.action} with extras ${intent.extras}")
-        ctx.sendBroadcast(intent)
+        sendMessageBroadcast(intent)
     }
 
     fun sendUserAction(action: Action) {
@@ -53,6 +52,20 @@ class BroadcastService(private val ctx: Context) {
         }
         Log.d(TAG, "Sending user action intent broadcast: ${intent.action} with extras ${intent.extras}")
         ctx.sendBroadcast(intent)
+    }
+
+    private fun sendMessageBroadcast(intent: Intent) {
+        val allowedPackages = Repository.getInstance(ctx).getBroadcastAllowedPackages()
+        if (allowedPackages.isEmpty()) {
+            Log.d(TAG, "Sending message intent broadcast: ${intent.action} with extras ${intent.extras}")
+            ctx.sendBroadcast(intent)
+            return
+        }
+        allowedPackages.forEach { packageName ->
+            val packageIntent = Intent(intent).setPackage(packageName)
+            Log.d(TAG, "Sending message intent broadcast: ${packageIntent.action} to $packageName with extras ${packageIntent.extras}")
+            ctx.sendBroadcast(packageIntent)
+        }
     }
 
     /**

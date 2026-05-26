@@ -566,6 +566,32 @@ class SettingsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPrefere
                 }
             }
 
+            // Broadcast receiver packages
+            val broadcastAllowedPackagesPrefId = context?.getString(R.string.settings_advanced_broadcast_allowed_packages_key) ?: return
+            val broadcastAllowedPackages: EditTextPreference? = findPreference(broadcastAllowedPackagesPrefId)
+            broadcastAllowedPackages?.text = repository.getBroadcastAllowedPackagesText()
+            broadcastAllowedPackages?.dependency = broadcastEnabledPrefId
+            broadcastAllowedPackages?.preferenceDataStore = object : PreferenceDataStore() {
+                override fun putString(key: String?, value: String?) {
+                    repository.setBroadcastAllowedPackages(value ?: "")
+                }
+                override fun getString(key: String?, defValue: String?): String {
+                    return repository.getBroadcastAllowedPackagesText()
+                }
+            }
+            broadcastAllowedPackages?.onPreferenceChangeListener = Preference.OnPreferenceChangeListener { pref, newValue ->
+                (pref as EditTextPreference).text = Repository.normalizeBroadcastAllowedPackages(newValue as? String ?: "")
+                false
+            }
+            broadcastAllowedPackages?.summaryProvider = Preference.SummaryProvider<EditTextPreference> {
+                val allowedPackages = repository.getBroadcastAllowedPackages()
+                if (allowedPackages.isEmpty()) {
+                    getString(R.string.settings_advanced_broadcast_allowed_packages_summary_all)
+                } else {
+                    getString(R.string.settings_advanced_broadcast_allowed_packages_summary_restricted, allowedPackages.joinToString(", "))
+                }
+            }
+
             // Enable UnifiedPush
             val unifiedPushEnabledPrefId = context?.getString(R.string.settings_advanced_unifiedpush_key) ?: return
             val unifiedPushEnabled: SwitchPreferenceCompat? = findPreference(unifiedPushEnabledPrefId)

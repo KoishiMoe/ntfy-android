@@ -81,6 +81,9 @@ class Backuper(val context: Context) {
         if (settings.broadcastEnabled != null) {
             repository.setBroadcastEnabled(settings.broadcastEnabled)
         }
+        if (settings.broadcastAllowedPackages != null) {
+            repository.setBroadcastAllowedPackages(settings.broadcastAllowedPackages.joinToString("\n"))
+        }
         if (settings.recordLogs != null) {
             repository.setRecordLogsEnabled(settings.recordLogs)
         }
@@ -278,6 +281,7 @@ class Backuper(val context: Context) {
             dynamicColors = repository.getDynamicColorsEnabled(),
             connectionProtocol = repository.getConnectionProtocol(),
             broadcastEnabled = repository.getBroadcastEnabled(),
+            broadcastAllowedPackages = repository.getBroadcastAllowedPackages(),
             recordLogs = repository.getRecordLogs(),
             defaultBaseUrl = repository.getDefaultBaseUrl() ?: "",
             mutedUntil = repository.getGlobalMutedUntil(),
@@ -422,6 +426,7 @@ data class Settings(
     val dynamicColors: Boolean?,
     val connectionProtocol: String?,
     val broadcastEnabled: Boolean?,
+    val broadcastAllowedPackages: List<String>?,
     val recordLogs: Boolean?,
     val defaultBaseUrl: String?,
     val mutedUntil: Long?,

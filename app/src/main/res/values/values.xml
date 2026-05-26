@@ -29,6 +29,7 @@
     <string name="settings_backup_restore_backup_key" translatable="false">Backup</string>
     <string name="settings_backup_restore_restore_key" translatable="false">Restore</string>
     <string name="settings_advanced_broadcast_key" translatable="false">BroadcastEnabled</string>
+    <string name="settings_advanced_broadcast_allowed_packages_key" translatable="false">BroadcastAllowedPackages</string>
     <string name="settings_advanced_unifiedpush_key" translatable="false">UnifiedPushEnabled</string>
     <string name="settings_advanced_custom_headers_key" translatable="false">CustomHeaders</string>
     <string name="settings_advanced_certificates_key" translatable="false">ManageCertificates</string>

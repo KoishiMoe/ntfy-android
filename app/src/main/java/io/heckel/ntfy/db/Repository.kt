@@ -374,6 +374,20 @@ class Repository(private val sharedPrefs: SharedPreferences, database: Database)
         }
     }
 
+    fun getBroadcastAllowedPackagesText(): String {
+        return sharedPrefs.getString(SHARED_PREFS_BROADCAST_ALLOWED_PACKAGES, "") ?: ""
+    }
+
+    fun getBroadcastAllowedPackages(): List<String> {
+        return parseBroadcastAllowedPackages(getBroadcastAllowedPackagesText())
+    }
+
+    fun setBroadcastAllowedPackages(packageNames: String) {
+        sharedPrefs.edit {
+            putString(SHARED_PREFS_BROADCAST_ALLOWED_PACKAGES, normalizeBroadcastAllowedPackages(packageNames))
+        }
+    }
+
     fun getUnifiedPushEnabled(): Boolean {
         return sharedPrefs.getBoolean(SHARED_PREFS_UNIFIEDPUSH_ENABLED, true) // Enabled by default
     }
@@ -660,6 +674,7 @@ class Repository(private val sharedPrefs: SharedPreferences, database: Database)
         const val SHARED_PREFS_DARK_MODE = "DarkMode"
         const val SHARED_PREFS_DYNAMIC_COLORS = "DynamicColors"
         const val SHARED_PREFS_BROADCAST_ENABLED = "BroadcastEnabled"
+        const val SHARED_PREFS_BROADCAST_ALLOWED_PACKAGES = "BroadcastAllowedPackages"
         const val SHARED_PREFS_UNIFIEDPUSH_ENABLED = "UnifiedPushEnabled"
         const val SHARED_PREFS_INSISTENT_MAX_PRIORITY_ENABLED = "InsistentMaxPriority"
         const val SHARED_PREFS_RECORD_LOGS_ENABLED = "RecordLogs"
@@ -738,6 +753,18 @@ class Repository(private val sharedPrefs: SharedPreferences, database: Database)
                 instance = newInstance
                 newInstance
             }
+        }
+
+        fun normalizeBroadcastAllowedPackages(packageNames: String): String {
+            return parseBroadcastAllowedPackages(packageNames).joinToString("\n")
+        }
+
+        fun parseBroadcastAllowedPackages(packageNames: String): List<String> {
+            return packageNames
+                .split(',', ';', '\n', '\r', '\t', ' ')
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
         }
     }
 }
