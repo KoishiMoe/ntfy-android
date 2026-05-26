@@ -236,6 +236,16 @@
                     android:layout_marginTop="10dp"
                     android:visibility="gone"/>
 
+                <!-- Photo attachment list (shown after local photos are selected) -->
+                <TextView
+                    android:id="@+id/publish_dialog_photo_attachments_text"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:visibility="gone"/>
+
                 <!-- Attachment filename field (shared between attach URL and attach file) -->
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/publish_dialog_attach_filename_layout"
@@ -364,6 +374,15 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/publish_dialog_chip_attach_file"
+                        app:chipBackgroundColor="@color/chip_background_state"
+                        app:chipStrokeWidth="0dp"/>
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/publish_dialog_chip_attach_photos"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/publish_dialog_chip_attach_photos"
                         app:chipBackgroundColor="@color/chip_background_state"
                         app:chipStrokeWidth="0dp"/>
 

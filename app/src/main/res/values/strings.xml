@@ -255,6 +255,7 @@
     <string name="publish_dialog_chip_markdown">Markdown</string>
     <string name="publish_dialog_chip_attach_url">Attach by URL</string>
     <string name="publish_dialog_chip_attach_file">Attach local file</string>
+    <string name="publish_dialog_chip_attach_photos">Attach local photos</string>
     <string name="publish_dialog_chip_phone_call">Phone call</string>
     <string name="publish_dialog_click_url_hint">Click URL</string>
     <string name="publish_dialog_click_url_placeholder">e.g. https://example.com/alerts/1234</string>
@@ -266,6 +267,8 @@
     <string name="publish_dialog_attach_url_placeholder">e.g. https://example.com/flowers.jpg</string>
     <string name="publish_dialog_attach_filename_hint">Attachment filename</string>
     <string name="publish_dialog_attach_filename_placeholder">e.g. lilies.jpg</string>
+    <string name="publish_dialog_attach_photos_selected">%1$d photos selected\n%2$s</string>
+    <string name="publish_dialog_attach_photos_uploading">Photo %1$d of %2$d</string>
     <string name="publish_dialog_phone_call_hint">Phone call</string>
     <string name="publish_dialog_phone_call_placeholder">e.g. +1234567890</string>
     <string name="publish_dialog_docs_text">For examples and a detailed description of all publish features, please refer to the <a href="https://docs.ntfy.sh/publish/">documentation</a>.</string>

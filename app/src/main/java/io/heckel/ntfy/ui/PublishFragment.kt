@@ -16,6 +16,7 @@ import android.widget.TextView
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
@@ -45,6 +46,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import io.heckel.ntfy.util.ProgressRequestBody
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 
 class PublishFragment : DialogFragment() {
     private lateinit var repository: Repository
@@ -71,6 +73,7 @@ class PublishFragment : DialogFragment() {
     private lateinit var chipDelay: Chip
     private lateinit var chipAttachUrl: Chip
     private lateinit var chipAttachFile: Chip
+    private lateinit var chipAttachPhotos: Chip
     private lateinit var chipPhoneCall: Chip
 
     // Toggleable field layouts
@@ -99,6 +102,7 @@ class PublishFragment : DialogFragment() {
     private lateinit var attachmentBoxIcon: ImageView
     private lateinit var attachmentBoxFilenameText: TextInputEditText
     private lateinit var attachmentBoxSize: TextView
+    private lateinit var photoAttachmentsText: TextView
 
     // Progress/Error
     private lateinit var uploadProgress: LinearProgressIndicator
@@ -112,19 +116,25 @@ class PublishFragment : DialogFragment() {
     private var cancelFn: (() -> Unit)? = null
     private var publishing: Boolean = false
 
+    private data class LocalAttachment(
+        val uri: Uri,
+        val name: String,
+        val size: Long,
+        val mimeType: String
+    )
+
     // State
     private var baseUrl: String = ""
     private var topic: String = ""
     private var displayName: String = ""
     private var selectedPriority: Int = 3 // Default priority
     private var initialMessage: String = ""
-    private var selectedFileUri: Uri? = null
-    private var selectedFileName: String = ""
-    private var selectedFileSize: Long = 0
-    private var selectedFileMimeType: String = "application/octet-stream"
+    private var selectedFileAttachment: LocalAttachment? = null
+    private var selectedPhotoAttachments: List<LocalAttachment> = emptyList()
 
     // File picker
     private lateinit var filePickerLauncher: ActivityResultLauncher<Intent>
+    private lateinit var photoPickerLauncher: ActivityResultLauncher<PickVisualMediaRequest>
 
     // Implemented by the DetailActivity, allows us to let it know when the message is published
     interface PublishListener {
@@ -150,6 +160,14 @@ class PublishFragment : DialogFragment() {
             } else {
                 // User cancelled file picker, uncheck the chip
                 chipAttachFile.isChecked = false
+            }
+        }
+        photoPickerLauncher = registerForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
+            if (uris.isNotEmpty()) {
+                handleSelectedPhotos(uris)
+            } else {
+                // User cancelled photo picker, uncheck the chip
+                chipAttachPhotos.isChecked = false
             }
         }
     }
@@ -234,6 +252,7 @@ class PublishFragment : DialogFragment() {
         chipDelay = view.findViewById(R.id.publish_dialog_chip_delay)
         chipAttachUrl = view.findViewById(R.id.publish_dialog_chip_attach_url)
         chipAttachFile = view.findViewById(R.id.publish_dialog_chip_attach_file)
+        chipAttachPhotos = view.findViewById(R.id.publish_dialog_chip_attach_photos)
         chipPhoneCall = view.findViewById(R.id.publish_dialog_chip_phone_call)
 
         // Setup toggleable field layouts
@@ -262,6 +281,7 @@ class PublishFragment : DialogFragment() {
         attachmentBoxIcon = attachmentBox.findViewById(R.id.attachment_box_icon)
         attachmentBoxFilenameText = attachmentBox.findViewById(R.id.attachment_box_filename)
         attachmentBoxSize = attachmentBox.findViewById(R.id.attachment_box_size)
+        photoAttachmentsText = view.findViewById(R.id.publish_dialog_photo_attachments_text)
 
         // Setup chip click listeners
         setupChipListeners()
@@ -352,8 +372,9 @@ class PublishFragment : DialogFragment() {
             attachUrlLayout.visibility = if (isChecked) View.VISIBLE else View.GONE
             attachFilenameLayout.visibility = if (isChecked) View.VISIBLE else View.GONE
             if (isChecked) {
-                // Mutually exclusive with attach file
+                // Mutually exclusive with local attachments
                 chipAttachFile.isChecked = false
+                chipAttachPhotos.isChecked = false
                 attachUrlText.requestFocus()
                 showKeyboard(attachUrlText)
             } else {
@@ -364,16 +385,24 @@ class PublishFragment : DialogFragment() {
 
         chipAttachFile.setOnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
-                // Mutually exclusive with attach URL
+                // Mutually exclusive with attach URL and local photos
                 chipAttachUrl.isChecked = false
+                chipAttachPhotos.isChecked = false
                 // Open file picker immediately (don't show any UI yet)
                 openFilePicker()
             } else {
-                selectedFileUri = null
-                selectedFileName = ""
-                selectedFileSize = 0
-                attachmentBox.visibility = View.GONE
-                attachmentBoxFilenameText.setText("")
+                clearSelectedFile()
+            }
+        }
+
+        chipAttachPhotos.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                // Mutually exclusive with attach URL and local file
+                chipAttachUrl.isChecked = false
+                chipAttachFile.isChecked = false
+                openPhotoPicker()
+            } else {
+                clearSelectedPhotos()
             }
         }
 
@@ -388,18 +417,20 @@ class PublishFragment : DialogFragment() {
         }
     }
 
-    private fun createFileRequestBody(): RequestBody {
-        val fileUri = selectedFileUri!!
-        val mimeType = selectedFileMimeType.toMediaType()
-        val fileSize = selectedFileSize
+    private fun createAttachmentRequestBody(attachment: LocalAttachment, uploadLabel: String? = null): RequestBody {
+        val fileUri = attachment.uri
+        val mimeType = attachment.mimeType.toMediaTypeOrNull() ?: "application/octet-stream".toMediaType()
+        val fileSize = attachment.size
         val context = requireContext()
         
         val baseBody = object : RequestBody() {
             override fun contentType(): MediaType = mimeType
-            override fun contentLength(): Long = fileSize
+            override fun contentLength(): Long = if (fileSize > 0) fileSize else -1
             override fun writeTo(sink: BufferedSink) {
-                context.contentResolver.openInputStream(fileUri)?.use { inputStream ->
-                    sink.writeAll(inputStream.source())
+                val inputStream = context.contentResolver.openInputStream(fileUri)
+                    ?: throw java.io.IOException("Couldn't open content URI for reading")
+                inputStream.use { stream ->
+                    sink.writeAll(stream.source())
                 }
             }
         }
@@ -410,14 +441,29 @@ class PublishFragment : DialogFragment() {
             activity?.runOnUiThread {
                 if (!isAdded) return@runOnUiThread
                 uploadProgress.progress = percent
-                uploadProgressText.text = getString(
-                    R.string.publish_dialog_uploading,
-                    "$percent%",
-                    formatBytes(bytesWritten),
-                    formatBytes(totalBytes)
-                )
+                uploadProgressText.text = formatUploadProgressText(percent, bytesWritten, totalBytes, uploadLabel)
             }
         }
+    }
+
+    private fun formatUploadProgressText(percent: Int, bytesWritten: Long, totalBytes: Long, uploadLabel: String? = null): String {
+        val percentText = if (totalBytes > 0) "$percent%" else "..."
+        val totalBytesText = if (totalBytes > 0) formatBytes(totalBytes) else "?"
+        val progressText = getString(
+            R.string.publish_dialog_uploading,
+            percentText,
+            formatBytes(bytesWritten),
+            totalBytesText
+        )
+        return if (uploadLabel.isNullOrEmpty()) {
+            progressText
+        } else {
+            "$uploadLabel\n$progressText"
+        }
+    }
+
+    private fun formatAttachmentSize(size: Long): String {
+        return if (size > 0) formatBytes(size) else "?"
     }
 
     private fun showKeyboard(view: View) {
@@ -447,28 +493,79 @@ class PublishFragment : DialogFragment() {
         filePickerLauncher.launch(intent)
     }
 
+    private fun openPhotoPicker() {
+        val request = PickVisualMediaRequest.Builder()
+            .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
+            .setOrderedSelection(true)
+            .build()
+        photoPickerLauncher.launch(request)
+    }
+
     private fun handleSelectedFile(uri: Uri) {
-        selectedFileUri = uri
-        
-        // Get file name, size and mime type
-        requireContext().contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-            cursor.moveToFirst()
-            selectedFileName = if (nameIndex >= 0) cursor.getString(nameIndex) else "file"
-            selectedFileSize = if (sizeIndex >= 0) cursor.getLong(sizeIndex) else 0
-        }
-        
-        selectedFileMimeType = requireContext().contentResolver.getType(uri) ?: "application/octet-stream"
+        selectedFileAttachment = readLocalAttachment(uri, "file")
+        val attachment = selectedFileAttachment ?: return
         
         // Show the attachment box with icon, size, and filename field
         attachmentBox.visibility = View.VISIBLE
-        attachmentBoxIcon.setImageResource(mimeTypeToIconResource(selectedFileMimeType))
-        attachmentBoxSize.text = formatBytes(selectedFileSize)
-        attachmentBoxFilenameText.setText(selectedFileName)
+        attachmentBoxIcon.setImageResource(mimeTypeToIconResource(attachment.mimeType))
+        attachmentBoxSize.text = formatAttachmentSize(attachment.size)
+        attachmentBoxFilenameText.setText(attachment.name)
         
         attachmentBoxFilenameText.requestFocus()
         showKeyboard(attachmentBoxFilenameText)
+    }
+
+    private fun handleSelectedPhotos(uris: List<Uri>) {
+        selectedPhotoAttachments = uris.mapIndexed { index, uri ->
+            readLocalAttachment(uri, "photo-${index + 1}")
+        }
+        val photoLines = selectedPhotoAttachments.mapIndexed { index, attachment ->
+            "${index + 1}. ${attachment.name} (${formatAttachmentSize(attachment.size)})"
+        }.joinToString("\n")
+        photoAttachmentsText.text = getString(
+            R.string.publish_dialog_attach_photos_selected,
+            selectedPhotoAttachments.size,
+            photoLines
+        )
+        photoAttachmentsText.visibility = View.VISIBLE
+        hideKeyboard()
+    }
+
+    private fun readLocalAttachment(uri: Uri, fallbackName: String): LocalAttachment {
+        var name = fallbackName
+        var size = 0L
+
+        requireContext().contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIndex >= 0 && !cursor.isNull(nameIndex)) {
+                    cursor.getString(nameIndex)?.let { name = it }
+                }
+                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
+                    size = cursor.getLong(sizeIndex).coerceAtLeast(0L)
+                }
+            }
+        }
+
+        return LocalAttachment(
+            uri = uri,
+            name = name,
+            size = size,
+            mimeType = requireContext().contentResolver.getType(uri) ?: "application/octet-stream"
+        )
+    }
+
+    private fun clearSelectedFile() {
+        selectedFileAttachment = null
+        attachmentBox.visibility = View.GONE
+        attachmentBoxFilenameText.setText("")
+    }
+
+    private fun clearSelectedPhotos() {
+        selectedPhotoAttachments = emptyList()
+        photoAttachmentsText.text = ""
+        photoAttachmentsText.visibility = View.GONE
     }
 
     override fun onStart() {
@@ -517,12 +614,24 @@ class PublishFragment : DialogFragment() {
         val phoneCall = if (chipPhoneCall.isChecked) phoneCallText.text.toString() else ""
 
         // Show progress UI
-        val hasFileAttachment = chipAttachFile.isChecked && selectedFileUri != null
-        if (hasFileAttachment) {
+        val fileAttachment = if (chipAttachFile.isChecked) selectedFileAttachment else null
+        val photoAttachments = if (chipAttachPhotos.isChecked) selectedPhotoAttachments else emptyList()
+        val hasFileAttachment = fileAttachment != null
+        val hasPhotoAttachments = photoAttachments.isNotEmpty()
+        val firstLocalAttachment = fileAttachment ?: photoAttachments.firstOrNull()
+        val firstUploadLabel = if (hasPhotoAttachments) {
+            getString(R.string.publish_dialog_attach_photos_uploading, 1, photoAttachments.size)
+        } else {
+            null
+        }
+        val photoUploadLabels = photoAttachments.mapIndexed { index, _ ->
+            getString(R.string.publish_dialog_attach_photos_uploading, index + 1, photoAttachments.size)
+        }
+        if (firstLocalAttachment != null) {
             uploadProgress.visibility = View.VISIBLE
             uploadProgress.progress = 0
             uploadProgressText.visibility = View.VISIBLE
-            uploadProgressText.text = getString(R.string.publish_dialog_uploading, "0%", "0 B", formatBytes(selectedFileSize))
+            uploadProgressText.text = formatUploadProgressText(0, 0, firstLocalAttachment.size, firstUploadLabel)
         }
         errorText.visibility = View.GONE
         errorImage.visibility = View.GONE
@@ -533,27 +642,55 @@ class PublishFragment : DialogFragment() {
         job = lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val user = repository.getUser(baseUrl)
-                val body = if (hasFileAttachment) createFileRequestBody() else null
-                val filename = if (hasFileAttachment) attachmentBoxFilenameText.text.toString() else attachFilename
+                if (hasPhotoAttachments) {
+                    photoAttachments.forEachIndexed { index, attachment ->
+                        withContext(Dispatchers.Main) {
+                            if (!isAdded) return@withContext
+                            uploadProgress.progress = 0
+                            uploadProgressText.text = formatUploadProgressText(0, 0, attachment.size, photoUploadLabels[index])
+                        }
+                        api.publish(
+                            baseUrl = baseUrl,
+                            topic = topic,
+                            user = user,
+                            message = message,
+                            title = title,
+                            priority = priority,
+                            tags = tags,
+                            delay = delay,
+                            body = createAttachmentRequestBody(attachment, photoUploadLabels[index]),
+                            filename = attachment.name,
+                            click = clickUrl,
+                            attach = "",
+                            email = email,
+                            call = phoneCall,
+                            markdown = markdown,
+                            onCancelAvailable = { cancel -> this@PublishFragment.cancelFn = cancel }
+                        )
+                    }
+                } else {
+                    val body = fileAttachment?.let { createAttachmentRequestBody(it) }
+                    val filename = if (hasFileAttachment) attachmentBoxFilenameText.text.toString() else attachFilename
 
-                api.publish(
-                    baseUrl = baseUrl,
-                    topic = topic,
-                    user = user,
-                    message = message,
-                    title = title,
-                    priority = priority,
-                    tags = tags,
-                    delay = delay,
-                    body = body,
-                    filename = filename,
-                    click = clickUrl,
-                    attach = if (hasFileAttachment) "" else attachUrl,
-                    email = email,
-                    call = phoneCall,
-                    markdown = markdown,
-                    onCancelAvailable = { cancel -> this@PublishFragment.cancelFn = cancel }
-                )
+                    api.publish(
+                        baseUrl = baseUrl,
+                        topic = topic,
+                        user = user,
+                        message = message,
+                        title = title,
+                        priority = priority,
+                        tags = tags,
+                        delay = delay,
+                        body = body,
+                        filename = filename,
+                        click = clickUrl,
+                        attach = if (hasFileAttachment) "" else attachUrl,
+                        email = email,
+                        call = phoneCall,
+                        markdown = markdown,
+                        onCancelAvailable = { cancel -> this@PublishFragment.cancelFn = cancel }
+                    )
+                }
                 
                 withContext(Dispatchers.Main) {
                     if (!isAdded) return@withContext
@@ -636,6 +773,7 @@ class PublishFragment : DialogFragment() {
         chipDelay.isEnabled = enable
         chipAttachUrl.isEnabled = enable
         chipAttachFile.isEnabled = enable
+        chipAttachPhotos.isEnabled = enable
         chipPhoneCall.isEnabled = enable
         
         // Optional fields
